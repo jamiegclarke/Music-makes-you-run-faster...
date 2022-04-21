@@ -30,8 +30,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
       return strava.handleAuthorizationRedirect(url)
         
     }
-    
-
 
     
 }

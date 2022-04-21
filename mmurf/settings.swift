@@ -5,20 +5,76 @@
 //  Created by jamie goodrick-clarke on 24/02/2022.
 //
 
+
+//spotifyoauth and stravaoauth contains the access token. Made public so all classes can access information they need
 var spotifyoauth = ""
 var stravoauth = ""
 
 import UIKit
 import StravaSwift
 
-class settings: UIViewController, SPTSessionManagerDelegate, SPTAppRemoteDelegate, SPTAppRemotePlayerStateDelegate{
+// used to check if it is the first time launching to enable caching
+var launchflag = false
+
+class settings: UIViewController, SPTSessionManagerDelegate {
     
+    //outlets for spotify and strava login images
+    @IBOutlet weak var stravimage: UIImageView!
+    @IBOutlet weak var spotimage: UIImageView!
+    
+    
+    // Runs when view loads, checks each second if strava and spotify are authenticated. If one is authenticated their button disapears. If both are authentication screen segues to view controller
+    var Login = 0
+    var timer: Timer? = nil
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        spotlogin.addTarget(self, action: #selector(didTapConnect(_:)), for: .touchUpInside)
+
+        self.timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true, block: { _ in
+            if spotifyoauth != "" && stravoauth != "" {
+                    self.timer?.invalidate()
+                    self.performSegue(withIdentifier: "start", sender: nil)
+                        
+                    }
+            if spotifyoauth != "" {
+                self.spotlogin.fadeOut()
+                self.spotimage.fadeOut()
+
+            }
+            if stravoauth != "" {
+                self.stralogin.fadeOut()
+                self.stravimage.fadeOut()
+                
+            }
+            
+        })
+    }
+    
+    
+    //checks if application has lanuched before and sets launch flag on that basis
+    func isAppAlreadyLaunchedOnce()->Bool{
+            let defaults = UserDefaults.standard
+            
+            if defaults.bool(forKey: "isAppAlreadyLaunchedOnce"){
+                launchflag = true
+                return true
+            }else{
+                defaults.set(true, forKey: "isAppAlreadyLaunchedOnce")
+                launchflag = false
+                return false
+            }
+        }
+    
+    // set client id and redirectURL
     let SpotifyClientID = "7abf26d14c1c43499e2de1000028e6e0"
     let SpotifyRedirectURL = URL(string: "mmurf://returnAfterLogin")!
     
+    
+    //login button for spotify
     @IBOutlet weak var spotlogin: UIButton!
     
-    
+    //configures SPT authorisation protocols
     lazy var configuration: SPTConfiguration = {
            let configuration = SPTConfiguration(clientID: SpotifyClientID,
                                                 redirectURL: SpotifyRedirectURL)
@@ -27,7 +83,7 @@ class settings: UIViewController, SPTSessionManagerDelegate, SPTAppRemoteDelegat
            return configuration
        }()
     
-
+    
     lazy var sessionManager: SPTSessionManager = {
         if let tokenSwapURL = URL(string: "https://mmurf.herokuapp.com/api/token"),
            let tokenRefreshURL = URL(string: "https://mmurf.herokuapp.com/api/refresh_token") {
@@ -41,63 +97,12 @@ class settings: UIViewController, SPTSessionManagerDelegate, SPTAppRemoteDelegat
           
     }()
 
-    lazy var appRemote: SPTAppRemote = {
-        let appRemote = SPTAppRemote(configuration: configuration, logLevel: .debug)
-        appRemote.delegate = self
-        
-        return appRemote
-    }()
-    
-    
-    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
-      self.sessionManager.application(app, open: url, options: options)
-      
-      return true
-    }
 
-    private var lastPlayerState: SPTAppRemotePlayerState?
-
-    // MARK: - Subviews
-
-    
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-
-        spotlogin.addTarget(self, action: #selector(didTapConnect(_:)), for: .touchUpInside)
-        
-        updateViewBasedOnConnected()
-    }
-
-    func updateViewBasedOnConnected() {
-        if (appRemote.isConnected) {
-            spotlogin.tintColor = UIColor(red: 0.6784, green: 1, blue: 0.6784, alpha: 1.0)
-        } else {
-            print("Fail")
-        }
-    }
-
-    // MARK: - Actions
-
-    @objc func didTapPauseOrPlay(_ button: UIButton) {
-        if let lastPlayerState = lastPlayerState, lastPlayerState.isPaused {
-            appRemote.playerAPI?.resume(nil)
-        } else {
-            appRemote.playerAPI?.pause(nil)
-        }
-    }
-
-    @objc func didTapDisconnect(_ button: UIButton) {
-        if (appRemote.isConnected) {
-            appRemote.disconnect()
-        }
-    }
-
+    // starts connection procedure and outlines scope
     @objc func didTapConnect(_ button: UIButton) {
         
         print("connecting...")
 
-        
         let scopes: SPTScope = [.userReadEmail, .userReadPrivate,
         .userReadPlaybackState, .userModifyPlaybackState,
         .userReadCurrentlyPlaying, .streaming, .appRemoteControl,
@@ -105,19 +110,20 @@ class settings: UIViewController, SPTSessionManagerDelegate, SPTAppRemoteDelegat
         .userLibraryModify, .userLibraryRead,
         .userTopRead, .userReadPlaybackState, .userReadCurrentlyPlaying,
                                 .userFollowRead, .userFollowModify, .userReadRecentlyPlayed ]
-
+        
         self.sessionManager.initiateSession(with: scopes, options: .default)
+        
     }
 
-
-    // MARK: - SPTSessionManagerDelegate
+    //STP Session Manager stems, used to configure connection outcomes
 
     func sessionManager(manager: SPTSessionManager, didFailWith error: Error) {
-        presentAlertController(title: "Authorization Failed", message: error.localizedDescription, buttonTitle: "Bummer")
+        print("failed")
+        
     }
 
     func sessionManager(manager: SPTSessionManager, didRenew session: SPTSession) {
-        presentAlertController(title: "Session Renewed", message: session.description, buttonTitle: "Sweet")
+        print("reconnected")
     }
 
     func sessionManager(manager: SPTSessionManager, didInitiate session: SPTSession) {
@@ -125,69 +131,21 @@ class settings: UIViewController, SPTSessionManagerDelegate, SPTAppRemoteDelegat
         print("success")
         
         spotifyoauth = session.accessToken
-        
-        appRemote.connectionParameters.accessToken = session.accessToken
-        self.appRemote.connect()
-    }
 
-    // MARK: - SPTAppRemoteDelegate
-
-    func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
-        updateViewBasedOnConnected()
-        
-        appRemote.playerAPI?.delegate = self
-        appRemote.playerAPI?.subscribe(toPlayerState: { (success, error) in
-            if let error = error {
-                print("Error subscribing to player state:" + error.localizedDescription)
-            }
-        })
-    }
-
-    func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
-        updateViewBasedOnConnected()
-        lastPlayerState = nil
-    }
-
-    func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
-        updateViewBasedOnConnected()
-        lastPlayerState = nil
-    }
-
-    // MARK: - SPTAppRemotePlayerAPIDelegate
-
-    func playerStateDidChange(_ playerState: SPTAppRemotePlayerState) {
-        print("isPaused", playerState.isPaused)
-        print("track.uri", playerState.track.uri)
-        print("track.name", playerState.track.name)
-        print("track.imageIdentifier", playerState.track.imageIdentifier)
-        print("track.artist.name", playerState.track.artist.name)
-        print("track.album.name", playerState.track.album.name)
-        print("track.isSaved", playerState.track.isSaved)
-        print("playbackSpeed", playerState.playbackSpeed)
-        print("playbackOptions.isShuffling", playerState.playbackOptions.isShuffling)
-        print("playbackOptions.repeatMode", playerState.playbackOptions.repeatMode.hashValue)
-        print("playbackPosition", playerState.playbackPosition)
-    }
-
-    // MARK: - Private Helpers
-
-    private func presentAlertController(title: String, message: String, buttonTitle: String) {
-        DispatchQueue.main.async {
-            let controller = UIAlertController(title: title, message: message, preferredStyle: .alert)
-            let action = UIAlertAction(title: buttonTitle, style: .default, handler: nil)
-            controller.addAction(action)
-            self.present(controller, animated: true)
-        }
     }
     
-    
 
+    
+    
+    
+// Strava Authentication
+    
+    
+    //logins in user to strava to authenticate
     var code: String?
     private var token: OAuthToken?
 
     @IBOutlet weak var stralogin: UIButton!
-    
-    
     
     @IBAction func login(_ sender: AnyObject) {
         print("connecting...")
@@ -199,22 +157,53 @@ class settings: UIViewController, SPTSessionManagerDelegate, SPTAppRemoteDelegat
         }
     }
 
+    //run when strava has authenticated with the application
     private func didAuthenticate(result: Result<OAuthToken, Error>) {
         switch result {
             case .success(let token):
                 print("connection success!")
+
                 self.token = token
                 stravoauth = token.accessToken!
                 
-             
-            
-            stralogin.tintColor = UIColor(red: 0.6784, green: 1, blue: 0.6784, alpha: 1.0)
             case .failure(let error):
                 debugPrint(error)
         }
     }
     
    
+
+}
+
+
+
+
+
+
+// Fading in and out button animation
+
+extension UIView {
+
+    func fadeIn(_ duration: TimeInterval? = 0.2, onCompletion: (() -> Void)? = nil) {
+        self.alpha = 0
+        self.isHidden = false
+        UIView.animate(withDuration: duration!,
+                       animations: { self.alpha = 1 },
+                       completion: { (value: Bool) in
+                          if let complete = onCompletion { complete() }
+                       }
+        )
+    }
+
+    func fadeOut(_ duration: TimeInterval? = 0.2, onCompletion: (() -> Void)? = nil) {
+        UIView.animate(withDuration: duration!,
+                       animations: { self.alpha = 0 },
+                       completion: { (value: Bool) in
+                           self.isHidden = true
+                           if let complete = onCompletion { complete() }
+                       }
+        )
+    }
 
 }
     
